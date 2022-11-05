@@ -1,88 +1,128 @@
 #!/bin/bash
 
-source <(curl -s https://raw.githubusercontent.com/nodejumper-org/cosmos-utils/main/utils/common.sh)
+echo -e "\033[0;35m"
+echo " :::    ::: ::::::::::: ::::    :::  ::::::::  :::::::::  :::::::::: ::::::::  ";
+echo " :+:   :+:      :+:     :+:+:   :+: :+:    :+: :+:    :+: :+:       :+:    :+: ";
+echo " +:+  +:+       +:+     :+:+:+  +:+ +:+    +:+ +:+    +:+ +:+       +:+        ";
+echo " +#++:++        +#+     +#+ +:+ +#+ +#+    +:+ +#+    +:+ +#++:++#  +#++:++#++ ";
+echo " +#+  +#+       +#+     +#+  +#+#+# +#+    +#+ +#+    +#+ +#+              +#+ ";
+echo " #+#   #+#  #+# #+#     #+#   #+#+# #+#    #+# #+#    #+# #+#       #+#    #+# ";
+echo " ###    ###  #####      ###    ####  ########  #########  ########## ########  ";
+echo -e "\e[0m"
 
-printLogo
 
-read -p "Enter node moniker: " NODE_MONIKER
+sleep 2
 
-CHAIN_ID="ollo-testnet-1"
-CHAIN_DENOM="utollo"
-BINARY="ollod"
-CHEAT_SHEET="https://nodejumper.io/ollo-testnet/cheat-sheet"
+# set vars
+if [ ! $NODENAME ]; then
+	read -p "Enter node name: " NODENAME
+	echo 'export NODENAME='$NODENAME >> $HOME/.bash_profile
+fi
+OLLO_PORT=32
+if [ ! $WALLET ]; then
+	echo "export WALLET=wallet" >> $HOME/.bash_profile
+fi
+echo "export OLLO_CHAIN_ID=ollo-testnet-1" >> $HOME/.bash_profile
+echo "export OLLO_PORT=${OLLO_PORT}" >> $HOME/.bash_profile
+source $HOME/.bash_profile
 
-printLine
-echo -e "Node moniker: ${CYAN}$NODE_MONIKER${NC}"
-echo -e "Chain id:     ${CYAN}$CHAIN_ID${NC}"
-echo -e "Chain demon:  ${CYAN}$CHAIN_DENOM${NC}"
-printLine
-sleep 1
+echo '================================================='
+echo -e "Your node name: \e[1m\e[32m$NODENAME\e[0m"
+echo -e "Your wallet name: \e[1m\e[32m$WALLET\e[0m"
+echo -e "Your chain name: \e[1m\e[32m$OLLO_CHAIN_ID\e[0m"
+echo -e "Your port: \e[1m\e[32m$OLLO_PORT\e[0m"
+echo '================================================='
+sleep 2
 
-source <(curl -s https://raw.githubusercontent.com/nodejumper-org/cosmos-utils/main/utils/dependencies_install.sh)
+echo -e "\e[1m\e[32m1. Updating packages... \e[0m" && sleep 1
+# update
+sudo apt update && sudo apt upgrade -y
 
-printCyan "4. Building binaries..." && sleep 1
+echo -e "\e[1m\e[32m2. Installing dependencies... \e[0m" && sleep 1
+# packages
+sudo apt install curl build-essential git wget jq make gcc tmux chrony -y
 
-cd || return
-rm -rf ollo
+# install go
+if ! [ -x "$(command -v go)" ]; then
+  ver="1.18.2"
+  cd $HOME
+  wget "https://golang.org/dl/go$ver.linux-amd64.tar.gz"
+  sudo rm -rf /usr/local/go
+  sudo tar -C /usr/local -xzf "go$ver.linux-amd64.tar.gz"
+  rm "go$ver.linux-amd64.tar.gz"
+  echo "export PATH=$PATH:/usr/local/go/bin:$HOME/go/bin" >> ~/.bash_profile
+  source ~/.bash_profile
+fi
+
+echo -e "\e[1m\e[32m3. Downloading and building binaries... \e[0m" && sleep 1
+# download binary
+cd $HOME
 git clone https://github.com/OllO-Station/ollo.git
-cd ollo || return
+cd ollo
 make install
-ollod version # latest
 
+# config
+ollod config chain-id $OLLO_CHAIN_ID
 ollod config keyring-backend test
-ollod config chain-id $CHAIN_ID
-ollod init $NODE_MONIKER --chain-id $CHAIN_ID
+ollod config node tcp://localhost:${OLLO_PORT}657
 
+# init
+ollod init $NODENAME --chain-id $OLLO_CHAIN_ID
+
+# download genesis and addrbook
 curl https://raw.githubusercontent.com/OllO-Station/networks/master/ollo-testnet-1/genesis.json | jq .result.genesis > $HOME/.ollo/config/genesis.json
-sha256sum $HOME/.ollo/config/genesis.json # 2dbb812f9977f35fad7e4f0ae6f405d1fd2991de62f4124e060fcf18220c516d
 
-curl -s https://snapshots2-testnet.nodejumper.io/ollo-testnet/addrbook.json > $HOME/.ollo/config/addrbook.json
+# set peers and seeds
+SEEDS=""
+PEERS="2a8f0fada8b8b71b8154cf30ce44aebea1b5fe3d@145.239.31.245:26656,1173fe561814f1ecb8b8f19d1769b87cd576897f@185.173.157.251:26656,489daf96446f104d822fae34cd4aa7a9b5cebf65@65.21.131.215:26626,f43435894d3ae6382c9cf95c63fec523a2686345@167.235.145.255:26656,2eeb90b696ba9a62a8ad9561f39c1b75473515eb@77.37.176.99:26656,9a3e2725e02d1c420a5d500fa17ce0ef45ddc9e8@65.109.30.117:29656,91f1889f22975294cfbfa0c1661c63150d2b9355@65.108.140.222:30656,d38fcf79871189c2c430473a7e04bd69aeb812c2@78.107.234.44:16656,f795505ac42f18e55e65c02bb7107b08d83ad837@65.109.17.86:37656,6368702dd71e69035dff6f7830eb45b2bae92d53@65.109.57.161:15656"
+sed -i -e "s/^seeds *=.*/seeds = \"$SEEDS\"/; s/^persistent_peers *=.*/persistent_peers = \"$PEERS\"/" $HOME/.ollo/config/config.toml
 
-sed -i 's|^minimum-gas-prices *=.*|minimum-gas-prices = "0.0001utollo"|g' $HOME/.ollo/config/app.toml
-seeds=""
-peers="6aa3e31cc85922be69779df9747d7a08326a44f2@ollo-testnet.nodejumper.io:28656"
-sed -i -e 's|^seeds *=.*|seeds = "'$seeds'"|; s|^persistent_peers *=.*|persistent_peers = "'$peers'"|' $HOME/.ollo/config/config.toml
+# set custom ports
+sed -i.bak -e "s%^proxy_app = \"tcp://127.0.0.1:26658\"%proxy_app = \"tcp://127.0.0.1:${OLLO_PORT}658\"%; s%^laddr = \"tcp://127.0.0.1:26657\"%laddr = \"tcp://127.0.0.1:${OLLO_PORT}657\"%; s%^pprof_laddr = \"localhost:6060\"%pprof_laddr = \"localhost:${OLLO_PORT}060\"%; s%^laddr = \"tcp://0.0.0.0:26656\"%laddr = \"tcp://0.0.0.0:${OLLO_PORT}656\"%; s%^prometheus_listen_addr = \":26660\"%prometheus_listen_addr = \":${OLLO_PORT}660\"%" $HOME/.ollo/config/config.toml
+sed -i.bak -e "s%^address = \"tcp://0.0.0.0:1317\"%address = \"tcp://0.0.0.0:${OLLO_PORT}317\"%; s%^address = \":8080\"%address = \":${OLLO_PORT}080\"%; s%^address = \"0.0.0.0:9090\"%address = \"0.0.0.0:${OLLO_PORT}090\"%; s%^address = \"0.0.0.0:9091\"%address = \"0.0.0.0:${OLLO_PORT}091\"%" $HOME/.ollo/config/app.toml
 
-# in case of pruning
-sed -i 's|pruning = "default"|pruning = "custom"|g' $HOME/.ollo/config/app.toml
-sed -i 's|pruning-keep-recent = "0"|pruning-keep-recent = "100"|g' $HOME/.ollo/config/app.toml
-sed -i 's|pruning-interval = "0"|pruning-interval = "10"|g' $HOME/.ollo/config/app.toml
+# config pruning
+pruning="custom"
+pruning_keep_recent="100"
+pruning_keep_every="0"
+pruning_interval="50"
+sed -i -e "s/^pruning *=.*/pruning = \"$pruning\"/" $HOME/.ollo/config/app.toml
+sed -i -e "s/^pruning-keep-recent *=.*/pruning-keep-recent = \"$pruning_keep_recent\"/" $HOME/.ollo/config/app.toml
+sed -i -e "s/^pruning-keep-every *=.*/pruning-keep-every = \"$pruning_keep_every\"/" $HOME/.ollo/config/app.toml
+sed -i -e "s/^pruning-interval *=.*/pruning-interval = \"$pruning_interval\"/" $HOME/.ollo/config/app.toml
 
-printCyan "5. Starting service and synchronization..." && sleep 1
+# set minimum gas price and timeout commit
+sed -i -e "s/^minimum-gas-prices *=.*/minimum-gas-prices = \"0utollo\"/" $HOME/.ollo/config/app.toml
 
-sudo tee /etc/systemd/system/ollod.service > /dev/null << EOF
+# enable prometheus
+sed -i -e "s/prometheus = false/prometheus = true/" $HOME/.ollo/config/config.toml
+
+# reset
+ollod tendermint unsafe-reset-all --home $HOME/.ollo
+
+echo -e "\e[1m\e[32m4. Starting service... \e[0m" && sleep 1
+# create service
+sudo tee /etc/systemd/system/ollod.service > /dev/null <<EOF
 [Unit]
-Description=Ollo Node
+Description=ollo
 After=network-online.target
+
 [Service]
 User=$USER
-ExecStart=$(which ollod) start
+ExecStart=$(which ollod) start --home $HOME/.ollo
 Restart=on-failure
-RestartSec=10
-LimitNOFILE=10000
+RestartSec=3
+LimitNOFILE=65535
+
 [Install]
 WantedBy=multi-user.target
 EOF
 
-ollod tendermint unsafe-reset-all --home $HOME/.ollo --keep-addr-book
-
-SNAP_RPC="https://ollo-testnet.nodejumper.io:443"
-LATEST_HEIGHT=$(curl -s $SNAP_RPC/block | jq -r .result.block.header.height); \
-BLOCK_HEIGHT=$((LATEST_HEIGHT - 2000)); \
-TRUST_HASH=$(curl -s "$SNAP_RPC/block?height=$BLOCK_HEIGHT" | jq -r .result.block_id.hash)
-
-echo $LATEST_HEIGHT $BLOCK_HEIGHT $TRUST_HASH
-
-sed -i -E "s|^(enable[[:space:]]+=[[:space:]]+).*$|\1true| ; \
-s|^(rpc_servers[[:space:]]+=[[:space:]]+).*$|\1\"$SNAP_RPC,$SNAP_RPC\"| ; \
-s|^(trust_height[[:space:]]+=[[:space:]]+).*$|\1$BLOCK_HEIGHT| ; \
-s|^(trust_hash[[:space:]]+=[[:space:]]+).*$|\1\"$TRUST_HASH\"|" $HOME/.ollo/config/config.toml
-
+# start service
 sudo systemctl daemon-reload
 sudo systemctl enable ollod
 sudo systemctl restart ollod
 
-printLine
-echo -e "Check logs:            ${CYAN}sudo journalctl -u $BINARY -f --no-hostname -o cat ${NC}"
-echo -e "Check synchronization: ${CYAN}$BINARY status 2>&1 | jq .SyncInfo.catching_up${NC}"
-echo -e "More commands:         ${CYAN}$CHEAT_SHEET${NC}"
+echo '=============== SETUP FINISHED ==================='
+echo -e 'To check logs: \e[1m\e[32mjournalctl -u ollod -f -o cat\e[0m'
+echo -e "To check sync status: \e[1m\e[32mcurl -s localhost:${OLLO_PORT}657/status | jq .result.sync_info\e[0m"
